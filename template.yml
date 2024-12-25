@@ -1,0 +1,142 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    service: "${PROJECT_NAME}"
+    app: "${PROJECT_NAME}"
+    hpa: "true"
+  name: "${PROJECT_NAME}"
+spec:
+  replicas: ${SCALE_MIN}
+  revisionHistoryLimit: 0
+  strategy:
+    type: RollingUpdate
+  selector:
+    matchLabels:
+      service: "${PROJECT_NAME}"
+  template:
+    metadata:
+      labels:
+        service: "${PROJECT_NAME}"
+        app: "${PROJECT_NAME}"
+        hpa: "true"
+    spec:
+      serviceAccountName: "${PROJECT_NAME}"
+      containers:
+        - image: $CI_REGISTRY_IMAGE:$DOCKER_TAG
+          name: "${PROJECT_NAME}"
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 30
+            timeoutSeconds: 30
+            successThreshold: 1
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 30
+            timeoutSeconds: 30
+            successThreshold: 1
+            failureThreshold: 3
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            failureThreshold: 30
+            periodSeconds: 10
+          ports:
+            - name: http
+              containerPort: ${EXPOSE_PORT}
+          resources:
+            requests:
+              memory: ${MEM_MIN}
+              cpu: ${CPU_MIN}
+            limits:
+              memory: ${MEM_MAX}
+              cpu: ${CPU_MAX}
+          lifecycle:
+            preStop:
+              exec:
+                command: ["sleep", "30"]
+          env:
+            - name: TZ
+              value: "Asia/Ho_Chi_Minh"
+      terminationGracePeriodSeconds: 101
+      restartPolicy: Always
+      enableServiceLinks: false
+      dnsConfig:
+        options:
+          - name: ndots
+            value: "2"
+          - name: timeout
+            value: "3"
+          - name: attempts
+            value: "2"
+          - name: single-request
+          - name: single-request-reopen
+          - name: use-vc
+          - name: no-reload
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    service: "${PROJECT_NAME}"
+    app: "${PROJECT_NAME}"
+  name: "${PROJECT_NAME}"
+spec:
+  ports:
+    - port: 80
+      targetPort: ${EXPOSE_PORT}
+      appProtocol: http
+      name: http
+  selector:
+    app: "${PROJECT_NAME}"
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: "${PROJECT_NAME}"
+  labels:
+    service: "${PROJECT_NAME}"
+    app: "${PROJECT_NAME}"
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: "${PROJECT_NAME}"
+spec:
+  maxUnavailable: "50%"
+  selector:
+    matchLabels:
+      app: "${PROJECT_NAME}"
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: "${PROJECT_NAME}"
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: "${PROJECT_NAME}"
+  minReplicas: ${SCALE_MIN}
+  maxReplicas: ${SCALE_MAX}
+  metrics:
+    - type: ContainerResource
+      containerResource:
+        name: memory
+        container: "${PROJECT_NAME}"
+        target:
+          type: Utilization
+          averageUtilization: 80
+    - type: ContainerResource
+      containerResource:
+        name: cpu
+        container: "${PROJECT_NAME}"
+        target:
+          type: Utilization
+          averageUtilization: 80
