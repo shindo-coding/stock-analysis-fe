@@ -89,7 +89,7 @@ metadata:
   name: "${PROJECT_NAME}"
 spec:
   ports:
-    - port: 3000
+    - port: 80
       targetPort: ${EXPOSE_PORT}
       appProtocol: http
       name: http
